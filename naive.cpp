@@ -117,6 +117,23 @@ namespace welch{
         std::vector<Document> get_data(){
             return *data;
         }
+        void shuffle_data(std::string file){
+            std::ifstream file_data(file_name);
+            std::ofstream write_data(file);
+
+            std::vector<std::string> tmp;
+
+            std::string tmp_line;
+            while (std::getline(file_data, tmp_line)) {
+                tmp.push_back(tmp_line);
+                std::random_shuffle(tmp.begin(), tmp.end());
+            }
+            std::random_shuffle(tmp.begin(), tmp.end());
+            for(std::string line : tmp){
+                write_data << line << std::endl;
+            }
+            write_data.close();
+        }
 
         void load_data(){
             std::ifstream file_data(file_name);
@@ -191,12 +208,21 @@ namespace welch{
                 }
             }
         }
-        std::string classify(){
+        std::string classify(std::vector<Feature> features){
             std::string output = "";
-            double heighest = -55555.0;
-
-            return "";
+            double highest = -55555.0;
+            for (auto& kv : features_to_category) {
+                double res = calculate_probability(kv.first, features);
+                if (res > highest){
+                    highest = res;
+                    output = kv.first;
+                }else if (res == highest){
+                    output = "1";
+                }
+            }
+            return output;
         }
+
     private:
         // calculate a the probability of a set of features belonging to a particular class
         double calculate_probability(std::string label, std::vector<Feature> features){
@@ -224,12 +250,12 @@ namespace welch{
 }
 
 int main(){
-    //welch::DataProvider test("train.tfidf");
-    //test.load_data();
+    welch::DataProvider test("/Users/laurencewelch/Projects/naiveb/naiveb/train.tfidf");
+    test.shuffle_data("/Users/laurencewelch/Projects/naiveb/naiveb/train_shuffled.tfidf");
 
     //welch::DataProvider train("test.tfidf");
     //train.load_data();
 
-    welch::Naive bayes("/Users/laurencewelch/Projects/naiveb/naiveb/train.tfidf","/Users/laurencewelch/Projects/naiveb/naiveb/test.tfidf");
-    bayes.teach();
+    //welch::Naive bayes("/Users/laurencewelch/Projects/naiveb/naiveb/train.tfidf","/Users/laurencewelch/Projects/naiveb/naiveb/test.tfidf");
+    //bayes.teach();
 }
