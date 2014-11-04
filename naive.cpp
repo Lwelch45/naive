@@ -152,7 +152,7 @@ namespace welch{
         void load_data(){
             std::ifstream file_data(file_name);
             std::string tmp_line;
-
+            data->clear();
             //iterate line by line
             while (std::getline(file_data, tmp_line)){
                 std::vector<std::string> line_tokens = Util::split(tmp_line, ' ');
@@ -212,8 +212,6 @@ namespace welch{
             features_to_category["1"]; // positive
             features_to_category["-1"]; // negative
 
-
-
             //iterate over documents
             for(Document doc : training_data->get_data()){
                 //iterate over each feature
@@ -223,6 +221,7 @@ namespace welch{
                 }
             }
         }
+
         std::string classify(std::vector<Feature> features){
             std::map<std::string, double> results;
             for (auto& kv : features_to_category) {
@@ -232,6 +231,19 @@ namespace welch{
             return  (results["1"] < results["-1"]) ? "-1" : "1";
         }
 
+        std::string cost_classify(std::vector<Feature> features){
+            std::map<std::string, double> results;
+            int c0 = 0; int c11 = 0;
+            int c01 = 10; int c10 = 15;
+
+            for (auto& kv : features_to_category) {
+                double res = cost_calculate_probability(kv.first, features);
+                results[kv.first] = res;
+            }
+            return ((double)((c10-c11) * results["1"]) > (double)((c01-c0)*results["-1"])) ? "1" : "-1";
+        }
+
+        //calculate the log odds of a given feature
         double log_odds(Feature feature){
             std::map<std::string, double> results;
             for (auto& kv : features_to_category) {
@@ -241,6 +253,7 @@ namespace welch{
             return  (results["1"] - results["-1"]);
         }
 
+        //calculate log odds for a given set of features and print to screen
         std::map<double, std::string> get_log_odds(){
             std::vector<std::string> vocab = DataProvider::get_vocab("/Users/laurencewelch/Projects/naive/vocabulary");
             std::map<double, std::string> log_odds_map;
@@ -256,8 +269,11 @@ namespace welch{
             }
             return log_odds_map;
         }
+
+        //takes in altered svm light output file.
+        //for this to work you must remove every thing thats not the support vectors from the file.
         std::map<double,std::string> get_largest_svm(std::string file){
-            std::vector<std::string> vocab = DataProvider::get_vocab("/Users/laurencewelch/Projects/naive/vocabulary");
+            std::vector<std::string> vocab = DataProvider::get_vocab(file);
             std::map<double, std::string> log_odds_map;
             testing_data = new DataProvider(file);
             testing_data->load_data();
@@ -273,6 +289,27 @@ namespace welch{
             return log_odds_map;
 
         }
+
+        void cost_test(){
+            testing_data->load_data();
+            int data_total = testing_data->get_data().size();
+            double positive = 0, false_positive = 0, false_negative = 0;
+            for(Document doc : testing_data->get_data()){
+                std::string output = cost_classify(*doc.features);
+                if(!output.compare(doc.label)){
+                    positive++;
+                }else if (output == "1" ){
+                    false_positive++;
+                }else if (output == "-1" ){
+                    false_negative++;
+                }
+            }
+            std::cout << "correct : "<< (positive) << std::endl;
+            std::cout << "accuracy : "<< (positive/data_total) << std::endl;
+            std::cout << "false positive : "<< (false_positive) << std::endl;
+            std::cout << "false negative : "<< (false_negative) << std::endl;
+        }
+
         void test(){
             testing_data->load_data();
             int data_total = testing_data->get_data().size();
@@ -293,11 +330,11 @@ namespace welch{
             std::cout << "false negative : "<< (false_negative) << std::endl;
         }
     private:
-        // calculate a the probability of a set of features belonging to a particular class
+        // calculate a the probability of a set of features belonging to a particular class using max log likelihood
         double calculate_probability(std::string label, std::vector<Feature> features){
             double current_label_count = features_to_category[label].size();
-            double label_probability = log(current_label_count) - log((double) training_data->get_data().size());
-            double result = 0;
+            double label_probability = current_label_count / (double) training_data->get_data().size();
+            double result = 1;
             // ddetermine the individual probability of each term
             for(Feature feat : features){
                 double occurances = 1;
@@ -306,13 +343,29 @@ namespace welch{
                 }
                 result += log(occurances) - log((double)current_label_count + (double)training_data->get_data().size());
             }
-            return result + (label_probability);
+            return (result -1) + log(label_probability);
+        }
+
+        // calculate a the probability of a set of features belonging to a particular class using max cost weighted function
+        double cost_calculate_probability(std::string label, std::vector<Feature> features){
+            double current_label_count = features_to_category[label].size();
+            double label_probability = current_label_count / (double) training_data->get_data().size();
+            double result = 1;
+            // ddetermine the individual probability of each term
+            for(Feature feat : features){
+                double occurances = 1;
+                if (Util::contains(features_to_category[label],feat)){
+                    occurances += Util::find(features_to_category[label], feat).sum_weighted_occurances;
+                }
+                result += (occurances) / ((double)current_label_count + (double)training_data->get_data().size());
+            }
+            return (result -1)  *(label_probability);
         }
 
         double calculate_probability(std::string label, Feature feature){
             double current_label_count = features_to_category[label].size();
-            double label_probability = log(current_label_count) - log((double) training_data->get_data().size());
-            double result = 0;
+            double label_probability = current_label_count/ (double) training_data->get_data().size();
+            double result = 1;
             // ddetermine the individual probability of each term
 
                 double occurances = 1;
@@ -321,7 +374,7 @@ namespace welch{
                 }
                 result += log(occurances) - log((double)current_label_count + (double)training_data->get_data().size());
 
-            return result + (label_probability);
+            return result + log(label_probability);
     }
 
 
@@ -333,15 +386,10 @@ namespace welch{
 }
 
 int main(){
-    //welch::DataProvider test("/Users/laurencewelch/Projects/naive/train.tfidf");
-    //test.shuffle_data("/Users/laurencewelch/Projects/naive/train_shuffled.tfidf");
 
-    //welch::DataProvider train("test.tfidf");
-    //train.load_data();
-
-    welch::Naive bayes("/Users/laurencewelch/Projects/naive/train.counts","/Users/laurencewelch/Projects/naive/test.counts");
-    bayes.get_largest_svm("/Users/laurencewelch/Projects/naive/shuffled_bayes.txt");
-    //bayes.teach();
-    //bayes.get_log_odds();
-    //bayes.test();
+    welch::Naive bayes("train.tfidf","test.tfidf");
+    bayes.teach();
+    bayes.test();
+    bayes.cost_test();// instead of regular maximum log likelihood comparrison use a cost weighted comparrison of the probabilities for each class with out the logs.
+    bayes.get_log_odds();
 }
