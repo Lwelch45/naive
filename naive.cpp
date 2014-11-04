@@ -117,6 +117,19 @@ namespace welch{
         std::vector<Document> get_data(){
             return *data;
         }
+
+        static std::vector<std::string> get_vocab(std::string filename){
+            std::ifstream file_data(filename);
+            std::vector<std::string> tmp;
+
+            std::string tmp_line;
+            while (std::getline(file_data, tmp_line)) {
+                tmp.push_back(tmp_line);
+            }
+            file_data.close();
+            return tmp;
+        }
+
         void shuffle_data(std::string file){
             std::ifstream file_data(file_name);
             std::ofstream write_data(file);
@@ -132,6 +145,7 @@ namespace welch{
             for(std::string line : tmp){
                 write_data << line << std::endl;
             }
+            file_data.close();
             write_data.close();
         }
 
@@ -154,6 +168,7 @@ namespace welch{
 
                     //gracb id and value add featuer to document
                     for(std::vector<std::string>::const_iterator f_line = feature_tokens.begin(); f_line != feature_tokens.end();++f_line, feature_iterator++){
+                        if (*f_line == "#") break;
                         if(feature_iterator == 0){
                             tmp_feature.id = stoi(*f_line);
                             continue;
@@ -163,7 +178,7 @@ namespace welch{
                     }
                     feature_iterator =0;
                 }
-                std::cout << doc.label << " : " << doc.feature_count << std::endl;
+                //std::cout << doc.label << " : " << doc.feature_count << std::endl;
                 if (doc.label != "")
                     data->push_back(doc);
             }
@@ -203,43 +218,111 @@ namespace welch{
             for(Document doc : training_data->get_data()){
                 //iterate over each feature
                 for (Feature feat : *doc.features){
-                    std::cout << feat.occurances << std::endl;
+                    //std::cout << feat.occurances << std::endl;
                     Util::find_and_add(features_to_category[doc.label], feat);
                 }
             }
         }
         std::string classify(std::vector<Feature> features){
-            std::string output = "";
-            double highest = -55555.0;
+            std::map<std::string, double> results;
             for (auto& kv : features_to_category) {
                 double res = calculate_probability(kv.first, features);
-                if (res > highest){
-                    highest = res;
-                    output = kv.first;
-                }else if (res == highest){
-                    output = "1";
-                }
+                results[kv.first] = res;
             }
-            return output;
+            return  (results["1"] < results["-1"]) ? "-1" : "1";
         }
 
+        double log_odds(Feature feature){
+            std::map<std::string, double> results;
+            for (auto& kv : features_to_category) {
+                double res = calculate_probability(kv.first, feature);
+                results[kv.first] = res;
+            }
+            return  (results["1"] - results["-1"]);
+        }
+
+        std::map<double, std::string> get_log_odds(){
+            std::vector<std::string> vocab = DataProvider::get_vocab("/Users/laurencewelch/Projects/naive/vocabulary");
+            std::map<double, std::string> log_odds_map;
+            testing_data->load_data();
+
+            for(Document doc : testing_data->get_data()){
+                for(Feature feat : *doc.features){
+                    log_odds_map[log_odds(feat)] = vocab[feat.id];
+                }
+            }
+            for(auto& kv : log_odds_map){
+                std::cout << kv.first << " : " << kv.second << std::endl;
+            }
+            return log_odds_map;
+        }
+        std::map<double,std::string> get_largest_svm(std::string file){
+            std::vector<std::string> vocab = DataProvider::get_vocab("/Users/laurencewelch/Projects/naive/vocabulary");
+            std::map<double, std::string> log_odds_map;
+            testing_data = new DataProvider(file);
+            testing_data->load_data();
+
+            for(Document doc : testing_data->get_data()){
+                for(Feature feat : *doc.features){
+                    log_odds_map[feat.occurances] = vocab[feat.id];
+                }
+            }
+            for(auto& kv : log_odds_map){
+                std::cout << kv.first << " : " << kv.second << std::endl;
+            }
+            return log_odds_map;
+
+        }
+        void test(){
+            testing_data->load_data();
+            int data_total = testing_data->get_data().size();
+            double positive = 0, false_positive = 0, false_negative = 0;
+            for(Document doc : testing_data->get_data()){
+                std::string output = classify(*doc.features);
+                if(!output.compare(doc.label)){
+                    positive++;
+                }else if (output == "1" ){
+                    false_positive++;
+                }else if (output == "-1" ){
+                    false_negative++;
+                }
+            }
+            std::cout << "correct : "<< (positive) << std::endl;
+            std::cout << "accuracy : "<< (positive/data_total) << std::endl;
+            std::cout << "false positive : "<< (false_positive) << std::endl;
+            std::cout << "false negative : "<< (false_negative) << std::endl;
+        }
     private:
         // calculate a the probability of a set of features belonging to a particular class
         double calculate_probability(std::string label, std::vector<Feature> features){
             double current_label_count = features_to_category[label].size();
-            double label_probability = current_label_count/(double) training_data->get_data().size();
-            double result;
+            double label_probability = log(current_label_count) - log((double) training_data->get_data().size());
+            double result = 0;
             // ddetermine the individual probability of each term
             for(Feature feat : features){
-                double occurances = 0.0;
+                double occurances = 1;
                 if (Util::contains(features_to_category[label],feat)){
-                    occurances = Util::find(features_to_category[label], feat).sum_weighted_occurances + 1;
+                    occurances += Util::find(features_to_category[label], feat).sum_weighted_occurances;
                 }
-                result += log(occurances/((double)current_label_count + (double)training_data->get_data().size()));
+                result += log(occurances) - log((double)current_label_count + (double)training_data->get_data().size());
             }
-            return result * label_probability;
+            return result + (label_probability);
         }
 
+        double calculate_probability(std::string label, Feature feature){
+            double current_label_count = features_to_category[label].size();
+            double label_probability = log(current_label_count) - log((double) training_data->get_data().size());
+            double result = 0;
+            // ddetermine the individual probability of each term
+
+                double occurances = 1;
+                if (Util::contains(features_to_category[label],feature)){
+                    occurances += Util::find(features_to_category[label], feature).sum_weighted_occurances;
+                }
+                result += log(occurances) - log((double)current_label_count + (double)training_data->get_data().size());
+
+            return result + (label_probability);
+    }
 
 
     private:
@@ -250,12 +333,15 @@ namespace welch{
 }
 
 int main(){
-    welch::DataProvider test("/Users/laurencewelch/Projects/naiveb/naiveb/train.tfidf");
-    test.shuffle_data("/Users/laurencewelch/Projects/naiveb/naiveb/train_shuffled.tfidf");
+    //welch::DataProvider test("/Users/laurencewelch/Projects/naive/train.tfidf");
+    //test.shuffle_data("/Users/laurencewelch/Projects/naive/train_shuffled.tfidf");
 
     //welch::DataProvider train("test.tfidf");
     //train.load_data();
 
-    //welch::Naive bayes("/Users/laurencewelch/Projects/naiveb/naiveb/train.tfidf","/Users/laurencewelch/Projects/naiveb/naiveb/test.tfidf");
+    welch::Naive bayes("/Users/laurencewelch/Projects/naive/train.counts","/Users/laurencewelch/Projects/naive/test.counts");
+    bayes.get_largest_svm("/Users/laurencewelch/Projects/naive/shuffled_bayes.txt");
     //bayes.teach();
+    //bayes.get_log_odds();
+    //bayes.test();
 }
