@@ -11,7 +11,7 @@
 #include <sstream>
 #include <vector>
 #include <iostream>
-
+#include <math.h>
 namespace welch{
 
     struct Feature{
@@ -62,6 +62,26 @@ namespace welch{
             }else{
                 Container.push_back(CategoryFeature(item.id, item.occurances));
                 return *Container.end();
+            }
+        }
+
+        template<typename T=Feature, typename R=std::vector<CategoryFeature> >
+        static CategoryFeature& find(R& Container, T const& item ) {
+            typename R::iterator it = std::find_if(Container.begin(), Container.end(),  [item](CategoryFeature&v)->bool{ return item.id == v.id; });
+            if (it != Container.end()){
+                return *it;
+            }else{
+                return *Container.end();
+            }
+        }
+
+        template<typename T=Feature, typename R=std::vector<CategoryFeature> >
+        static bool contains(R& Container, T const& item ) {
+            typename R::iterator it = std::find_if(Container.begin(), Container.end(),  [item](CategoryFeature&v)->bool{ return item.id == v.id; });
+            if (it != Container.end()){
+                return true;
+            }else{
+                return false;
             }
         }
     };
@@ -156,10 +176,11 @@ namespace welch{
             }
 
             training_data->load_data();
-            std::cout << "here";
             //initlize two known classes
             features_to_category["1"]; // positive
             features_to_category["-1"]; // negative
+
+
 
             //iterate over documents
             for(Document doc : training_data->get_data()){
@@ -169,20 +190,28 @@ namespace welch{
                     Util::find_and_add(features_to_category[doc.label], feat);
                 }
             }
-            //iterate over the documents in the training set
-            for (std::vector<Document>::iterator i = training_data->get_data().begin(); i != training_data->get_data().end(); ++i){
-                //iterate over the features of a given document
-                if (i->feature_count != 0){
-                    for(std::vector<Feature>::iterator f_i = i->features->begin(); f_i != i->features->end(); ++f_i){
-                        //Util::find_and_add(features_to_category[iter->first], *f_i);
-                        //std::cout << f_i->occurances << std::endl;
-                    }
-                }
-            }
+        }
+        std::string classify(){
+            std::string output = "";
+            double heighest = -55555.0;
+
+            return "";
         }
     private:
-        double calculate_probability(std::string label, std::vector<int>){
-            return 0.0;
+        // calculate a the probability of a set of features belonging to a particular class
+        double calculate_probability(std::string label, std::vector<Feature> features){
+            double current_label_count = features_to_category[label].size();
+            double label_probability = current_label_count/(double) training_data->get_data().size();
+            double result;
+            // ddetermine the individual probability of each term
+            for(Feature feat : features){
+                double occurances = 0.0;
+                if (Util::contains(features_to_category[label],feat)){
+                    occurances = Util::find(features_to_category[label], feat).sum_weighted_occurances + 1;
+                }
+                result += log(occurances/((double)current_label_count + (double)training_data->get_data().size()));
+            }
+            return result * label_probability;
         }
 
 
@@ -201,17 +230,6 @@ int main(){
     //welch::DataProvider train("test.tfidf");
     //train.load_data();
 
-    welch::Naive bayes("/Users/laurencewelch/Projects/naiveb/naiveb/train.tfidf","test.tfidf");
+    welch::Naive bayes("/Users/laurencewelch/Projects/naiveb/naiveb/train.tfidf","/Users/laurencewelch/Projects/naiveb/naiveb/test.tfidf");
     bayes.teach();
 }
-
-
-/*
- if (iter == my_map.end() || key < iter->first) {    // not found
-
- features_to_category.insert(iter, make_pair(key, value));     // hinted insertion
- } else {
-
- }
-
- */
